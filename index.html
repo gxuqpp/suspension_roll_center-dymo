@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>独立悬架侧倾中心确定方法</title>
+<style>
+:root {
+  --bg: #0c1520;
+  --panel: #0f1d2e;
+  --border: #1d3555;
+  --orange: #e8721a;
+  --orange-glow: rgba(232,114,26,0.18);
+  --blue: #5aaeff;
+  --green: #3dda8c;
+  --yellow: #f5c842;
+  --white: #dce9f2;
+  --muted: #7a90a6;
+  --text: #b0c8dc;
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei","PingFang SC","Noto Sans SC","Hiragino Sans GB",sans-serif;
+  min-height: 100vh;
+  padding-bottom: 28px;
+}
+.app { max-width: 700px; margin: 0 auto; padding: 0 12px; }
+
+/* Header */
+.hdr {
+  text-align: center;
+  padding: 18px 0 14px;
+}
+.hdr::after {
+  content:'';display:block;height:1px;
+  background: linear-gradient(90deg,transparent,var(--border),transparent);
+  margin-top:12px;
+}
+.hdr h1 { font-size:1.6rem; color:var(--white); font-weight:700; letter-spacing:.05em; }
+.hdr p  { font-size:1.1rem; color:var(--muted); margin-top:3px; }
+
+/* Tabs */
+.tabs { display:flex; gap:7px; padding:14px 0 10px; }
+.tab {
+  flex:1; background:var(--panel); border:1.5px solid var(--border);
+  color:var(--muted); padding:9px 6px; border-radius:10px;
+  font-size:1.05rem; cursor:pointer; font-family:inherit;
+  line-height:1.4; transition:all .2s; text-align:center;
+}
+.tab small { font-size:.95rem; display:block; margin-top:2px; opacity:.7; }
+.tab:active { opacity:.75; }
+.tab.active { background:var(--orange-glow); border-color:var(--orange); color:var(--orange); font-weight:700; }
+
+/* Canvas */
+.cvs-wrap {
+  background:var(--panel); border:1.5px solid var(--border);
+  border-radius:14px; overflow:hidden; margin-bottom:10px;
+  position:relative;
+}
+.cvs-wrap svg { width:100%; height:auto; display:block; }
+.fig-lbl {
+  position:absolute; top:9px; right:10px;
+  background:rgba(10,20,36,.85); border:1px solid var(--border);
+  color:var(--muted); font-size:.95rem; padding:2px 9px; border-radius:20px;
+}
+
+/* Progress */
+.prog-wrap { margin-bottom:10px; }
+.prog-bar {
+  height:3px; background:rgba(255,255,255,.05);
+  border-radius:3px; overflow:hidden; margin-bottom:9px;
+}
+.prog-fill {
+  height:100%; background:linear-gradient(90deg,var(--orange),#ffaa44);
+  border-radius:3px; transition:width .35s ease;
+}
+.dots { display:flex; gap:6px; justify-content:center; }
+.dot {
+  width:7px; height:7px; border-radius:50%;
+  background:var(--border); transition:all .3s;
+}
+.dot.active { background:var(--orange); transform:scale(1.35); }
+.dot.done   { background:var(--orange); opacity:.4; }
+
+/* Step info */
+.step-info {
+  background:var(--panel); border:1.5px solid var(--border);
+  border-radius:12px; padding:18px 20px; margin-bottom:10px; min-height:120px;
+}
+.step-head { display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+.s-badge {
+  background:var(--orange); color:#fff; font-size:1.0rem; font-weight:700;
+  padding:2px 9px; border-radius:20px; white-space:nowrap; flex-shrink:0;
+}
+.s-title { font-size:1.35rem; color:var(--white); font-weight:600; }
+.s-desc { font-size:1.2rem; color:var(--text); line-height:1.7; }
+
+/* Nav */
+.nav { display:flex; gap:8px; }
+.nbtn {
+  flex:1; background:var(--panel); border:1.5px solid var(--border);
+  color:var(--text); padding:13px 10px; border-radius:10px;
+  font-size:1.2rem; cursor:pointer; font-family:inherit; font-weight:500;
+  transition:all .2s; touch-action:manipulation;
+  -webkit-user-select:none; user-select:none;
+}
+.nbtn:active { opacity:.7; }
+.nbtn:disabled { opacity:.22; cursor:not-allowed; }
+.nbtn:not(:disabled):hover { background:var(--orange-glow); border-color:var(--orange); color:var(--orange); }
+.nbtn.primary { background:var(--orange); border-color:var(--orange); color:#fff; flex:2; }
+.nbtn.primary:active { background:#c55e14; }
+.nbtn.reset { flex:.75; color:var(--muted); font-size:1.2rem; }
+
+/* SVG animation classes */
+.ag { opacity:0; transition:opacity .35s ease; }
+.ag.show { opacity:1; }
+.dl {
+  stroke-dasharray:900;
+  stroke-dashoffset:900;
+}
+.ag.show .dl {
+  animation: drawL .65s ease-out forwards;
+}
+.pi {
+  transform-origin:center center;
+  transform:scale(0);
+  transition:transform .3s cubic-bezier(.34,1.56,.64,1);
+}
+.ag.show .pi { transform:scale(1); }
+
+@keyframes drawL { to { stroke-dashoffset:0; } }
+user-select: none
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <h1>独立悬架 · 侧倾中心确定方法</h1>
+    <p>《汽车设计》第6版 · 第七章第五节</p>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-fig="1">图 7-48<small>双横臂式</small></button>
+    <button class="tab"        data-fig="2">图 7-49<small>平行横臂</small></button>
+    <button class="tab"        data-fig="3">图 7-50<small>麦弗逊式</small></button>
+  </div>
+
+  <div class="cvs-wrap">
+    <div class="fig-lbl" id="fig-lbl">图 7-48</div>
+
+    <!-- ═══════════════════════════════════════
+         Figure 1 — 双横臂式  图7-48
+         Ground y=350, Wheel cx=118,cy=274,r=76
+         N=(118,350), Centerline x=572
+         Upper arm (122,230)→(322,254) slope=0.12
+         Lower arm (122,316)→(332,298) slope=-0.0857
+         P=(540,280), W=(572,275)
+    ═══════════════════════════════════════ -->
+    <svg id="svg1" viewBox="0 0 630 400" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="hatch" patternUnits="userSpaceOnUse" width="11" height="11" patternTransform="rotate(135)">
+          <line x1="0" y1="0" x2="0" y2="11" stroke="#3a2a14" stroke-width="2"/>
+        </pattern>
+        <marker id="ag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#7a90a6"/>
+        </marker>
+        <marker id="agr" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto">
+          <polygon points="8 0,0 3,8 6" fill="#7a90a6"/>
+        </marker>
+        <marker id="ao" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#e8721a"/>
+        </marker>
+        <marker id="ainf" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0,10 3.5,0 7" fill="#5aaeff"/>
+        </marker>
+        <marker id="ag2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#3dda8c"/>
+        </marker>
+      </defs>
+
+      <!-- G0: Base — always visible -->
+      <g id="f1g0">
+        <rect x="0" y="350" width="575" height="50" fill="url(#hatch)"/>
+        <line x1="0" y1="350" x2="575" y2="350" stroke="#6a5030" stroke-width="2"/>
+        <!-- Vehicle centerline -->
+        <line x1="572" y1="18" x2="572" y2="350" stroke="#2a4060" stroke-width="1.3" stroke-dasharray="7,4"/>
+        <text x="572" y="14" fill="#3a5878" font-size="14" text-anchor="middle" font-family="sans-serif">纵轴</text>
+        <!-- Wheel -->
+        <circle cx="118" cy="274" r="76" fill="rgba(255,255,255,.025)" stroke="#b0c4d8" stroke-width="2"/>
+        <circle cx="118" cy="274" r="40" fill="none" stroke="#2d4455" stroke-width="1" stroke-dasharray="3,3"/>
+        <circle cx="118" cy="274" r="5" fill="#6a8090"/>
+        <!-- Knuckle stub -->
+        <line x1="118" y1="212" x2="118" y2="350" stroke="#6a8090" stroke-width="3.5" stroke-linecap="round" opacity=".55"/>
+        <!-- N -->
+        <circle cx="118" cy="350" r="4.5" fill="#c0d4e4"/>
+        <text x="100" y="372" fill="#c0d4e4" font-size="19" font-family="Georgia,serif" font-style="italic">N</text>
+        <text x="25" y="385" fill="#6a5030" font-size="14" font-family="sans-serif">地面</text>
+      </g>
+
+      <!-- G1: Draw arms -->
+      <g id="f1g1" class="ag">
+        <!-- Chassis block -->
+        <rect x="320" y="198" width="68" height="148" rx="3" fill="#0d1e32" stroke="#2a5080" stroke-width="1.5"/>
+        <rect x="320" y="198" width="8" height="148" rx="2" fill="#1a3c62"/>
+        <!-- Upper arm -->
+        <line x1="122" y1="230" x2="322" y2="254" stroke="#9cc4e8" stroke-width="4.5" stroke-linecap="round" class="dl"/>
+        <!-- Lower arm -->
+        <line x1="122" y1="316" x2="332" y2="298" stroke="#5a9ac8" stroke-width="4.5" stroke-linecap="round" class="dl"/>
+        <!-- Pivots -->
+        <circle cx="122" cy="230" r="5.5" fill="#9cc4e8" class="pi"/>
+        <circle cx="322" cy="254" r="5.5" fill="#9cc4e8" class="pi"/>
+        <circle cx="122" cy="316" r="5.5" fill="#5a9ac8" class="pi"/>
+        <circle cx="332" cy="298" r="5.5" fill="#5a9ac8" class="pi"/>
+        <!-- Labels -->
+        <text x="195" y="234" fill="#9cc4e8" font-size="15" font-family="sans-serif">上横臂</text>
+        <text x="195" y="322" fill="#5a9ac8" font-size="15" font-family="sans-serif">下横臂</text>
+      </g>
+
+      <!-- G2: Extend upper arm line -->
+      <g id="f1g2" class="ag">
+        <!-- upper arm extension: slope=0.12, through (122,230) -->
+        <!-- x=0: y=215.4  x=566: y=283.7 -->
+        <line x1="0" y1="215" x2="566" y2="284" stroke="#e8721a" stroke-width="1.8" stroke-dasharray="10,6" stroke-linecap="round" class="dl"/>
+        <text x="8" y="208" fill="#e8721a" font-size="14" font-family="sans-serif">上横臂轴线延长</text>
+        <!-- angle sigma -->
+        <text x="310" y="243" fill="#e8721a" font-size="17" font-family="Georgia,serif" font-style="italic">σ</text>
+      </g>
+
+      <!-- G3: Extend lower arm, show P -->
+      <g id="f1g3" class="ag">
+        <!-- lower arm extension: slope=-0.0857, through (122,316) -->
+        <!-- x=0: y=326.5  x=566: y=277.5 -->
+        <line x1="0" y1="327" x2="566" y2="278" stroke="#5aaeff" stroke-width="1.8" stroke-dasharray="10,6" stroke-linecap="round" class="dl"/>
+        <text x="8" y="336" fill="#5aaeff" font-size="14" font-family="sans-serif">下横臂轴线延长</text>
+        <text x="335" y="312" fill="#5aaeff" font-size="17" font-family="Georgia,serif" font-style="italic">β</text>
+        <!-- P -->
+        <circle cx="540" cy="280" r="7" fill="#e8721a" stroke="#ffaa55" stroke-width="1.5" class="pi"/>
+        <text x="548" y="274" fill="#e8721a" font-size="20" font-family="Georgia,serif" font-style="italic" font-weight="bold">P</text>
+        <text x="488" y="262" fill="#e8721a" font-size="14" font-family="sans-serif" opacity=".85">极点</text>
+      </g>
+
+      <!-- G4: Line N-P-W -->
+      <g id="f1g4" class="ag">
+        <!-- N(118,350) to x=580: slope=-0.1775, at x=580: y=350-0.1775*462=350-82=268 -->
+        <line x1="118" y1="350" x2="580" y2="268" stroke="#3dda8c" stroke-width="2.2" stroke-dasharray="7,4" class="dl"/>
+        <text x="268" y="340" fill="#3dda8c" font-size="14" font-family="sans-serif">N–P 连线</text>
+      </g>
+
+      <!-- G5: W + measurement -->
+      <g id="f1g5" class="ag">
+        <circle cx="572" cy="275" r="7.5" fill="#3dda8c" stroke="#88ffcc" stroke-width="1.5" class="pi"/>
+        <text x="580" y="270" fill="#3dda8c" font-size="22" font-family="Georgia,serif" font-style="italic" font-weight="bold">W</text>
+        <!-- h_W -->
+        <line x1="600" y1="276" x2="600" y2="350" stroke="#7a90a6" stroke-width="1.5" marker-start="url(#agr)" marker-end="url(#ag)"/>
+        <text x="607" y="320" fill="#7a90a6" font-size="15" font-family="Georgia,serif" font-style="italic">h<tspan baseline-shift="sub" font-size="12">W</tspan></text>
+        <!-- label B1/2 -->
+        <line x1="118" y1="370" x2="572" y2="370" stroke="#2a4060" stroke-width="1" marker-start="url(#agr)" marker-end="url(#ag)"/>
+        <text x="345" y="383" fill="#2a4060" font-size="14" text-anchor="middle" font-family="sans-serif">B₁/2</text>
+        <text x="355" y="355" fill="#3dda8c" font-size="15" text-anchor="middle" font-family="sans-serif" opacity=".9">侧倾中心 W 确定！</text>
+      </g>
+    </svg>
+
+    <!-- ═══════════════════════════════════════
+         Figure 2 — 平行横臂  图7-49
+         Arms horizontal, P at infinity
+         W at ground level
+    ═══════════════════════════════════════ -->
+    <svg id="svg2" viewBox="0 0 630 400" xmlns="http://www.w3.org/2000/svg" style="display:none">
+      <defs>
+        <pattern id="hatch2" patternUnits="userSpaceOnUse" width="11" height="11" patternTransform="rotate(135)">
+          <line x1="0" y1="0" x2="0" y2="11" stroke="#3a2a14" stroke-width="2"/>
+        </pattern>
+        <marker id="ainf2" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto">
+          <polygon points="0 0,11 4,0 8" fill="#5aaeff"/>
+        </marker>
+        <marker id="ag2b" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#7a90a6"/>
+        </marker>
+        <marker id="agr2" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto">
+          <polygon points="8 0,0 3,8 6" fill="#7a90a6"/>
+        </marker>
+        <marker id="agrg2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#3dda8c"/>
+        </marker>
+      </defs>
+
+      <!-- G0 Base -->
+      <g id="f2g0">
+        <rect x="0" y="350" width="575" height="50" fill="url(#hatch2)"/>
+        <line x1="0" y1="350" x2="575" y2="350" stroke="#6a5030" stroke-width="2"/>
+        <line x1="572" y1="18" x2="572" y2="350" stroke="#2a4060" stroke-width="1.3" stroke-dasharray="7,4"/>
+        <text x="572" y="14" fill="#3a5878" font-size="14" text-anchor="middle" font-family="sans-serif">纵轴</text>
+        <circle cx="118" cy="274" r="76" fill="rgba(255,255,255,.025)" stroke="#b0c4d8" stroke-width="2"/>
+        <circle cx="118" cy="274" r="40" fill="none" stroke="#2d4455" stroke-width="1" stroke-dasharray="3,3"/>
+        <circle cx="118" cy="274" r="5" fill="#6a8090"/>
+        <line x1="118" y1="212" x2="118" y2="350" stroke="#6a8090" stroke-width="3.5" stroke-linecap="round" opacity=".55"/>
+        <circle cx="118" cy="350" r="4.5" fill="#c0d4e4"/>
+        <text x="100" y="372" fill="#c0d4e4" font-size="19" font-family="Georgia,serif" font-style="italic">N</text>
+        <text x="25" y="385" fill="#6a5030" font-size="14" font-family="sans-serif">地面</text>
+      </g>
+
+      <!-- G1: Draw parallel arms -->
+      <g id="f2g1" class="ag">
+        <rect x="320" y="198" width="68" height="148" rx="3" fill="#0d1e32" stroke="#2a5080" stroke-width="1.5"/>
+        <rect x="320" y="198" width="8" height="148" rx="2" fill="#1a3c62"/>
+        <!-- Upper arm - horizontal -->
+        <line x1="122" y1="238" x2="322" y2="238" stroke="#9cc4e8" stroke-width="4.5" stroke-linecap="round" class="dl"/>
+        <!-- Lower arm - horizontal -->
+        <line x1="122" y1="316" x2="332" y2="316" stroke="#5a9ac8" stroke-width="4.5" stroke-linecap="round" class="dl"/>
+        <!-- Pivots -->
+        <circle cx="122" cy="238" r="5.5" fill="#9cc4e8" class="pi"/>
+        <circle cx="322" cy="238" r="5.5" fill="#9cc4e8" class="pi"/>
+        <circle cx="122" cy="316" r="5.5" fill="#5a9ac8" class="pi"/>
+        <circle cx="332" cy="316" r="5.5" fill="#5a9ac8" class="pi"/>
+        <!-- Labels -->
+        <text x="192" y="228" fill="#9cc4e8" font-size="15" font-family="sans-serif">上横臂（水平）</text>
+        <text x="192" y="332" fill="#5a9ac8" font-size="15" font-family="sans-serif">下横臂（水平）</text>
+      </g>
+
+      <!-- G2: Show P at infinity -->
+      <g id="f2g2" class="ag">
+        <!-- Extension lines (both horizontal, dashed) -->
+        <line x1="0" y1="238" x2="560" y2="238" stroke="#e8721a" stroke-width="1.5" stroke-dasharray="10,6" class="dl"/>
+        <line x1="0" y1="316" x2="560" y2="316" stroke="#5aaeff" stroke-width="1.5" stroke-dasharray="10,6" class="dl"/>
+        <!-- P→∞ label with arrow -->
+        <text x="368" y="278" fill="#5aaeff" font-size="19" font-family="Georgia,serif" font-style="italic">P</text>
+        <text x="384" y="278" fill="#5aaeff" font-size="22">→</text>
+        <text x="400" y="278" fill="#5aaeff" font-size="22">∞</text>
+        <!-- explanation -->
+        <text x="310" y="295" fill="#5aaeff" font-size="14" font-family="sans-serif" opacity=".8">两轴线平行，永不相交</text>
+        <!-- parallel arrows showing same direction -->
+        <line x1="150" y1="276" x2="150" y2="280" stroke="none"/>
+        <line x1="195" y1="238" x2="240" y2="238" stroke="#e8721a" stroke-width="1.2" marker-end="url(#ainf2)"/>
+        <line x1="195" y1="316" x2="240" y2="316" stroke="#5aaeff" stroke-width="1.2" marker-end="url(#ainf2)"/>
+      </g>
+
+      <!-- G3: Line through N parallel to arms -->
+      <g id="f2g3" class="ag">
+        <!-- Horizontal line through N(118,350), same slope=0 → y=350 -->
+        <line x1="118" y1="350" x2="576" y2="350" stroke="#3dda8c" stroke-width="2.2" class="dl"/>
+        <text x="250" y="343" fill="#3dda8c" font-size="14" font-family="sans-serif">过N平行于两臂的连线</text>
+      </g>
+
+      <!-- G4: W at ground -->
+      <g id="f2g4" class="ag">
+        <circle cx="572" cy="350" r="7.5" fill="#3dda8c" stroke="#88ffcc" stroke-width="1.5" class="pi"/>
+        <text x="578" y="344" fill="#3dda8c" font-size="22" font-family="Georgia,serif" font-style="italic" font-weight="bold">W</text>
+        <!-- h_W = 0 label -->
+        <rect x="585" y="305" width="40" height="20" rx="5" fill="rgba(61,218,140,.15)" stroke="rgba(61,218,140,.3)" stroke-width="1"/>
+        <text x="605" y="319" fill="#3dda8c" font-size="15" text-anchor="middle" font-family="sans-serif">h<tspan baseline-shift="sub" font-size="12">W</tspan>=0</text>
+        <!-- label -->
+        <text x="340" y="365" fill="#3dda8c" font-size="15" text-anchor="middle" font-family="sans-serif" opacity=".9">W 在地面上！平行臂侧倾中心高度为零</text>
+      </g>
+    </svg>
+
+    <!-- ═══════════════════════════════════════
+         Figure 3 — 麦弗逊式  图7-50
+         Strut G=(118,282), E=(218,130)
+         Strut dir=(-100,152), perp slope=100/152=0.6579
+         Lower arm: (118,328)→(368,298) slope=-0.12
+         Perp: y=-13.4+0.6579x → from (20,0) to (550,348)
+         Lower ext: (0,342) to (570,274)
+         P=(457,287), W=(572,262)
+    ═══════════════════════════════════════ -->
+    <svg id="svg3" viewBox="0 0 630 400" xmlns="http://www.w3.org/2000/svg" style="display:none">
+      <defs>
+        <pattern id="hatch3" patternUnits="userSpaceOnUse" width="11" height="11" patternTransform="rotate(135)">
+          <line x1="0" y1="0" x2="0" y2="11" stroke="#3a2a14" stroke-width="2"/>
+        </pattern>
+        <marker id="ag3" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#7a90a6"/>
+        </marker>
+        <marker id="agr3" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto">
+          <polygon points="8 0,0 3,8 6" fill="#7a90a6"/>
+        </marker>
+        <marker id="ago3" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#e8721a"/>
+        </marker>
+        <marker id="agg3" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#3dda8c"/>
+        </marker>
+      </defs>
+
+      <!-- G0 Base -->
+      <g id="f3g0">
+        <rect x="0" y="350" width="575" height="50" fill="url(#hatch3)"/>
+        <line x1="0" y1="350" x2="575" y2="350" stroke="#6a5030" stroke-width="2"/>
+        <line x1="572" y1="18" x2="572" y2="350" stroke="#2a4060" stroke-width="1.3" stroke-dasharray="7,4"/>
+        <text x="572" y="14" fill="#3a5878" font-size="14" text-anchor="middle" font-family="sans-serif">纵轴</text>
+        <circle cx="118" cy="274" r="76" fill="rgba(255,255,255,.025)" stroke="#b0c4d8" stroke-width="2"/>
+        <circle cx="118" cy="274" r="40" fill="none" stroke="#2d4455" stroke-width="1" stroke-dasharray="3,3"/>
+        <circle cx="118" cy="274" r="5" fill="#6a8090"/>
+        <circle cx="118" cy="350" r="4.5" fill="#c0d4e4"/>
+        <text x="100" y="372" fill="#c0d4e4" font-size="19" font-family="Georgia,serif" font-style="italic">N</text>
+        <text x="25" y="385" fill="#6a5030" font-size="14" font-family="sans-serif">地面</text>
+      </g>
+
+      <!-- G1: Draw MacPherson strut and lower arm -->
+      <g id="f3g1" class="ag">
+        <!-- Chassis block -->
+        <rect x="216" y="82" width="70" height="55" rx="3" fill="#0d1e32" stroke="#2a5080" stroke-width="1.5"/>
+        <rect x="290" y="320" width="90" height="30" rx="3" fill="#0d1e32" stroke="#2a5080" stroke-width="1.5"/>
+        <!-- Strut outer (shock absorber body) -->
+        <line x1="118" y1="282" x2="218" y2="130" stroke="#7a9ab8" stroke-width="7" stroke-linecap="round" class="dl" opacity=".5"/>
+        <!-- Strut inner (piston rod) -->
+        <line x1="118" y1="282" x2="218" y2="130" stroke="#c8dcea" stroke-width="3" stroke-linecap="round" class="dl"/>
+        <!-- Spring symbol along strut: small zig-zag using polyline -->
+        <polyline points="152,233 157,226 148,219 157,212 148,205 157,198 152,191"
+          fill="none" stroke="#88bbcc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Lower arm -->
+        <line x1="118" y1="328" x2="368" y2="298" stroke="#5a9ac8" stroke-width="4.5" stroke-linecap="round" class="dl"/>
+        <!-- Pivots -->
+        <circle cx="118" cy="282" r="5.5" fill="#c8dcea" class="pi"/>  <!-- G lower strut -->
+        <circle cx="118" cy="328" r="5.5" fill="#5a9ac8" class="pi"/>  <!-- G lower arm -->
+        <circle cx="368" cy="298" r="5.5" fill="#5a9ac8" class="pi"/>  <!-- D lower arm inner -->
+        <!-- Labels -->
+        <text x="127" y="282" fill="#c8dcea" font-size="17" font-family="Georgia,serif" font-style="italic">G</text>
+        <text x="195" y="338" fill="#5a9ac8" font-size="15" font-family="sans-serif">下横臂 GD</text>
+      </g>
+
+      <!-- G2: Label E and strut axis -->
+      <g id="f3g2" class="ag">
+        <!-- E point highlight -->
+        <circle cx="218" cy="130" r="7" fill="#f5c842" stroke="#ffe07a" stroke-width="1.5" class="pi"/>
+        <text x="227" y="125" fill="#f5c842" font-size="19" font-family="Georgia,serif" font-style="italic" font-weight="bold">E</text>
+        <text x="240" y="140" fill="#f5c842" font-size="14" font-family="sans-serif">固定连接点</text>
+        <!-- Strut axis arrow (downward along strut) -->
+        <line x1="218" y1="155" x2="155" y2="252" stroke="#c8dcea" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#ago3)"/>
+        <text x="162" y="200" fill="#c8dcea" font-size="14" font-family="sans-serif">活塞杆方向 EG</text>
+      </g>
+
+      <!-- G3: Perpendicular from E to strut axis (orange dashed) -->
+      <g id="f3g3" class="ag">
+        <!-- Perp line: slope=100/152=0.6579, through E(218,130) -->
+        <!-- y = -13.4 + 0.6579x -->
+        <!-- at x=22: y=-13.4+14.5=1 (near top)  at x=550: y=-13.4+361.8=348 -->
+        <line x1="22" y1="1" x2="550" y2="348" stroke="#e8721a" stroke-width="1.8" stroke-dasharray="10,6" stroke-linecap="round" class="dl"/>
+        <!-- Label near E -->
+        <text x="244" y="116" fill="#e8721a" font-size="14" font-family="sans-serif">⊥ 减振器轴线</text>
+        <!-- right angle symbol at E -->
+        <g transform="translate(218,130) rotate(-33.5)">
+          <polyline points="0,12 12,12 12,0" fill="none" stroke="#e8721a" stroke-width="1.5"/>
+        </g>
+      </g>
+
+      <!-- G4: Extend lower arm, show P -->
+      <g id="f3g4" class="ag">
+        <!-- Lower arm extension: slope=-0.12, through (118,328) -->
+        <!-- y = 342.2 - 0.12x   at x=0:y=342  at x=570:y=274 -->
+        <line x1="0" y1="342" x2="570" y2="274" stroke="#5aaeff" stroke-width="1.8" stroke-dasharray="10,6" stroke-linecap="round" class="dl"/>
+        <text x="8" y="338" fill="#5aaeff" font-size="14" font-family="sans-serif">下横臂轴线延长</text>
+        <!-- P -->
+        <circle cx="457" cy="287" r="7" fill="#e8721a" stroke="#ffaa55" stroke-width="1.5" class="pi"/>
+        <text x="464" y="281" fill="#e8721a" font-size="20" font-family="Georgia,serif" font-style="italic" font-weight="bold">P</text>
+        <text x="408" y="268" fill="#e8721a" font-size="14" font-family="sans-serif" opacity=".85">极点</text>
+      </g>
+
+      <!-- G5: NP line, W -->
+      <g id="f3g5" class="ag">
+        <!-- N(118,350) to x=580: slope=(287-350)/(457-118)=-63/339=-0.186 -->
+        <!-- at x=580: y=350-0.186*462=350-86=264 -->
+        <line x1="118" y1="350" x2="580" y2="264" stroke="#3dda8c" stroke-width="2.2" stroke-dasharray="7,4" class="dl"/>
+        <text x="268" y="340" fill="#3dda8c" font-size="14" font-family="sans-serif">N–P 连线</text>
+        <!-- W -->
+        <circle cx="572" cy="264" r="7.5" fill="#3dda8c" stroke="#88ffcc" stroke-width="1.5" class="pi"/>
+        <text x="580" y="259" fill="#3dda8c" font-size="22" font-family="Georgia,serif" font-style="italic" font-weight="bold">W</text>
+        <!-- h_W -->
+        <line x1="600" y1="265" x2="600" y2="350" stroke="#7a90a6" stroke-width="1.5" marker-start="url(#agr3)" marker-end="url(#ag3)"/>
+        <text x="607" y="315" fill="#7a90a6" font-size="15" font-family="Georgia,serif" font-style="italic">h<tspan baseline-shift="sub" font-size="12">W</tspan></text>
+        <text x="340" y="368" fill="#3dda8c" font-size="15" text-anchor="middle" font-family="sans-serif" opacity=".9">侧倾中心 W 确定！</text>
+      </g>
+    </svg>
+  </div><!-- end cvs-wrap -->
+
+  <!-- Progress -->
+  <div class="prog-wrap">
+    <div class="prog-bar"><div class="prog-fill" id="pfill" style="width:16.7%"></div></div>
+    <div class="dots" id="dots"></div>
+  </div>
+
+  <!-- Step info -->
+  <div class="step-info">
+    <div class="step-head">
+      <span class="s-badge" id="sbadge">步骤 1 / 6</span>
+      <span class="s-title" id="stitle">悬架基本结构</span>
+    </div>
+    <p class="s-desc" id="sdesc">显示车轮、地面和汽车纵轴线基准。N 为轮胎接地点（位于地面），竖虚线为汽车对称轴（纵轴线）。</p>
+  </div>
+
+  <!-- Navigation -->
+  <div class="nav">
+    <button class="nbtn" id="bprev" disabled>← 上一步</button>
+    <button class="nbtn reset" id="breset">↺ 重置</button>
+    <button class="nbtn primary" id="bnext">下一步 →</button>
+  </div>
+</div>
+
+<script>
+const STEPS = {
+  1: [
+    { t:'悬架基本结构',     d:'显示车轮、地面和汽车纵轴线基准。N 为轮胎接地点（位于地面），竖虚线为汽车纵轴线（对称轴）。侧倾中心即定义在纵轴线上。' },
+    { t:'绘制上、下横臂',   d:'双横臂式独立悬架由上横臂（浅蓝）和下横臂（蓝色）组成，两端分别铰接于转向节和车身。上横臂略短，下横臂较长。' },
+    { t:'延长上横臂摆动轴线', d:'将上横臂两端铰链点的连线（橙色虚线）向两端无限延长，得到上横臂摆动轴线。σ 为上横臂轴线与水平面的夹角。' },
+    { t:'延长下横臂轴线，确定极点 P', d:'将下横臂铰链点连线（蓝色虚线）延长，与上横臂轴线的延长线相交，交点称为极点 P。β 为下横臂倾角。' },
+    { t:'连接接地点 N 与极点 P', d:'将轮胎接地点 N 与极点 P 连成直线（绿色），该直线与汽车纵轴线（竖虚线）的交点，即为悬架的侧倾中心 W。' },
+    { t:'侧倾中心 W 确定！', d:'侧倾中心 W 确定，h_W 为其距地面高度。前悬架一般 0～120 mm，后悬架 80～150 mm。侧倾中心位置影响车身侧倾角和轮距变化。' }
+  ],
+  2: [
+    { t:'悬架基本结构',     d:'平行横臂式双横臂悬架：上下横臂等长且平行，构成平行四边形机构，理论上可保证车轮跳动时轮距不变化。' },
+    { t:'绘制平行等长横臂', d:'两横臂均水平（或同等倾角）且完全平行。由于等长平行，车轮上下跳动时只做垂直平移，不改变外倾角，但侧倾中心很低。' },
+    { t:'极点 P 趋于无穷远（P→∞）', d:'由于上下横臂轴线相互平行，无论怎样延长都永远不会相交，即极点 P 在无穷远处（P→∞）。' },
+    { t:'过 N 作与横臂平行的直线', d:'当 P→∞ 时，N-P 方向即为横臂的方向。因此过接地点 N 作一条与两横臂平行的直线（绿色）。' },
+    { t:'侧倾中心 W 在地面上！', d:'该平行线与纵轴线的交点 W 恰在地面上，侧倾中心高度 h_W = 0。这意味着平行等长臂悬架的抗侧倾能力较差，车身侧倾较大。' }
+  ],
+  3: [
+    { t:'麦弗逊悬架基础结构', d:'麦弗逊式（滑柱式）独立悬架：由弹簧减振器总成（滑柱）替代上横臂，加上一根下横臂组成。结构简单紧凑，广泛用于轿车前悬。' },
+    { t:'绘制减振器滑柱与下横臂', d:'减振器轴线 EG 接近竖直（略外倾），G 为转向节铰接点，E 为活塞杆与车身的固定连接点。下横臂 GD 连接转向节与车身。' },
+    { t:'标注固定点 E 与活塞杆方向', d:'E（黄色）是减振器活塞杆与车身的固定连接点。活塞杆在轴线 EG 方向做伸缩运动，E 点随车身振动方向垂直于该轴线。' },
+    { t:'过 E 作减振器轴线的垂线', d:'过 E 点作减振器活塞杆运动方向（EG 轴线）的垂线（橙色虚线）。此步骤替代了双横臂式中"延长上横臂"的功能，是麦弗逊式的独有做法。' },
+    { t:'延长下横臂轴线，确定极点 P', d:'将下横臂 GD 的轴线向外延长（蓝色虚线），与上一步画出的垂线相交，交点即为极点 P。' },
+    { t:'连接 NP 确定侧倾中心 W', d:'连接接地点 N 与极点 P，与纵轴交点即为侧倾中心 W。减振器轴线越接近竖直、下横臂越水平，则 W 越靠近地面，侧倾中心越低。' }
+  ]
+};
+
+let fig=1, step=0;
+
+function total(){ return STEPS[fig].length; }
+
+function render(){
+  const steps=STEPS[fig], tot=steps.length, info=steps[step];
+  document.getElementById('sbadge').textContent=`步骤 ${step+1} / ${tot}`;
+  document.getElementById('stitle').textContent=info.t;
+  document.getElementById('sdesc').textContent=info.d;
+  document.getElementById('pfill').style.width=`${((step+1)/tot)*100}%`;
+
+  // dots
+  const dc=document.getElementById('dots'); dc.innerHTML='';
+  for(let i=0;i<tot;i++){
+    const d=document.createElement('div');
+    d.className='dot'+(i===step?' active':i<step?' done':'');
+    dc.appendChild(d);
+  }
+
+  document.getElementById('bprev').disabled = step===0;
+  const bn=document.getElementById('bnext');
+  bn.disabled = step===tot-1;
+  bn.textContent = step===tot-1?'✓ 完成':'下一步 →';
+
+  updateGroups();
+}
+
+function updateGroups(){
+  // For all figs, update visibility
+  for(let f=1;f<=3;f++){
+    for(let i=1;i<=5;i++){
+      const el=document.getElementById(`f${f}g${i}`);
+      if(!el) continue;
+      const shouldShow = f===fig && i<=step;
+      const isShown = el.classList.contains('show');
+      if(shouldShow && !isShown){
+        el.classList.remove('show');
+        // double rAF to restart CSS animations
+        requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.add('show')));
+      } else if(!shouldShow && isShown){
+        el.classList.remove('show');
+      }
+    }
+  }
+}
+
+function switchFig(f){
+  fig=f; step=0;
+  for(let i=1;i<=3;i++){
+    document.getElementById(`svg${i}`).style.display=i===f?'block':'none';
+  }
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.toggle('active',+t.dataset.fig===f);
+  });
+  const labels={1:'图 7-48',2:'图 7-49',3:'图 7-50'};
+  document.getElementById('fig-lbl').textContent=labels[f];
+  // Reset all groups immediately when switching
+  for(let ff=1;ff<=3;ff++)
+    for(let i=1;i<=5;i++){
+      const el=document.getElementById(`f${ff}g${i}`);
+      if(el) el.classList.remove('show');
+    }
+  render();
+}
+
+document.getElementById('tabs').addEventListener('click',e=>{
+  const t=e.target.closest('.tab');
+  if(t) switchFig(+t.dataset.fig);
+});
+document.getElementById('bnext').addEventListener('click',()=>{ if(step<total()-1){step++;render();} });
+document.getElementById('bprev').addEventListener('click',()=>{ if(step>0){step--;render();} });
+document.getElementById('breset').addEventListener('click',()=>{ step=0; render(); });
+
+// init
+render();
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+if (e.key === 'F12' || 
+(e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+(e.ctrlKey && e.key === 'U') ||
+(e.ctrlKey && e.key === 'S')) {
+e.preventDefault();
+return false;
+}
+});
+
+</script>
+<script>
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('keydown', e => {
+    if (e.key === 'F12' || 
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+        (e.ctrlKey && e.key === 'U') ||
+        (e.ctrlKey && e.key === 'S')) {
+      e.preventDefault();
+      return false;
+    }
+  });
+</script>
+
+</body>
+</html>
